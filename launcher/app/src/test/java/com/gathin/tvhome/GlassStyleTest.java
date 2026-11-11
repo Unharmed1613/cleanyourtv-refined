@@ -4,7 +4,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 
-/** glass_style from config.xml or a theme: rim or halo by name, glass for anything else. */
+/** glass_style from config.xml or a theme: rim, halo or shadow by name, glass for anything else. */
 public class GlassStyleTest {
 
     @Test
@@ -17,6 +17,12 @@ public class GlassStyleTest {
     public void haloByNameAnyCase() {
         assertEquals(Config.GLASS_HALO, Config.glassStyle("halo"));
         assertEquals(Config.GLASS_HALO, Config.glassStyle("HALO "));
+    }
+
+    @Test
+    public void shadowByNameAnyCase() {
+        assertEquals(Config.GLASS_SHADOW, Config.glassStyle("shadow"));
+        assertEquals(Config.GLASS_SHADOW, Config.glassStyle(" Shadow"));
     }
 
     @Test

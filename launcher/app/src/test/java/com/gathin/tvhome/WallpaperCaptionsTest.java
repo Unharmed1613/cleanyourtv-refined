@@ -4,7 +4,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Map;
 
 import org.junit.Test;
@@ -45,5 +49,35 @@ public class WallpaperCaptionsTest {
     @Test
     public void missingFolderHasNoNames() {
         assertTrue(WallpaperCaptions.read(null).isEmpty());
+        assertTrue(WallpaperCaptions.read(null, Locale.GERMAN).isEmpty());
+    }
+
+    @Test
+    public void translationsAreNamedByLanguage() {
+        assertEquals("captions-de.txt", WallpaperCaptions.fileName(Locale.GERMANY));
+        assertEquals("captions-pt.txt", WallpaperCaptions.fileName(new Locale("pt", "BR")));
+        assertEquals(null, WallpaperCaptions.fileName(Locale.ROOT));
+        assertTrue(WallpaperCaptions.isCaptionsFile("captions.txt"));
+        assertTrue(WallpaperCaptions.isCaptionsFile("captions-de.txt"));
+        assertFalse(WallpaperCaptions.isCaptionsFile("captions-DE.txt"));
+        assertFalse(WallpaperCaptions.isCaptionsFile("captions-../x.txt"));
+        assertFalse(WallpaperCaptions.isCaptionsFile("captionsxtxt"));
+    }
+
+    @Test
+    public void theLaunchersLanguageWinsAndCaptionsTxtIsTheFallback() throws Exception {
+        File folder = Files.createTempDirectory("captions").toFile();
+        try {
+            Files.write(new File(folder, "captions.txt").toPath(),
+                    Arrays.asList("001.jpg\tKing penguins"), StandardCharsets.UTF_8);
+            Files.write(new File(folder, "captions-de.txt").toPath(),
+                    Arrays.asList("001.jpg\tKönigspinguine"), StandardCharsets.UTF_8);
+            assertEquals("Königspinguine", WallpaperCaptions.read(folder, Locale.GERMANY).get("001.jpg"));
+            assertEquals("King penguins", WallpaperCaptions.read(folder, Locale.FRANCE).get("001.jpg"));
+            assertEquals("King penguins", WallpaperCaptions.read(folder, null).get("001.jpg"));
+        } finally {
+            for (File f : folder.listFiles()) f.delete();
+            folder.delete();
+        }
     }
 }

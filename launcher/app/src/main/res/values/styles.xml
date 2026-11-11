@@ -4,6 +4,10 @@
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:colorBackground">@android:color/black</item>
         <item name="android:windowAnimationStyle">@null</item>
+        <!-- Stronger than Material's 0.039 and 0.19, which vanish on a dark screen: the focused tile's shadow with
+             glass_style shadow is the only view on Home that has an elevation. -->
+        <item name="android:ambientShadowAlpha">0.14</item>
+        <item name="android:spotShadowAlpha">0.55</item>
     </style>
 
     <!-- Frosted pill, tvOS style. -->

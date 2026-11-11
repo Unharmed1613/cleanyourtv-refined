@@ -252,11 +252,23 @@ final class Config {
     final Map<String, Set<String>> wallpaperMoods;
     /** Shape of the glow behind the focused app (config.xml, glow_style): {@link #GLOW_RADIAL} or {@link #GLOW_HORIZON}. */
     final String glowStyle;
-    /** The focus highlight's look (config.xml, glass_style): {@link #GLASS_DEFAULT}, {@link #GLASS_RIM} or {@link #GLASS_HALO}. */
+    /** The focus highlight's look (config.xml, glass_style): {@link #GLASS_DEFAULT}, {@link #GLASS_RIM}, {@link #GLASS_HALO} or {@link #GLASS_SHADOW}. */
     final String glassStyle;
 
     static final String GLOW_RADIAL = "radial", GLOW_HORIZON = "horizon";
-    static final String GLASS_DEFAULT = "glass", GLASS_RIM = "rim", GLASS_HALO = "halo";
+    static final String GLASS_DEFAULT = "glass", GLASS_RIM = "rim", GLASS_HALO = "halo", GLASS_SHADOW = "shadow";
+    /** The top bar as one small glass capsule at the top right: the time, Settings and the top_bar_apps (config.xml, status_pill). */
+    final boolean statusPill;
+    /** The date under the clock screensaver's time; false shows the time alone (config.xml, clock_date). */
+    final boolean clockDate;
+    /** status_pill: the gear opens the Control Centre (ControlCenterActivity), its one menu, with no hold (config.xml, control_center). */
+    final boolean controlCenter;
+    /** The clock screensaver over pictures: the clock rests small at the bottom left with the picture's caption (clock_corner). */
+    final boolean clockCorner;
+    /** Home fades its wallpaper in and slides the dock up when it comes back on screen (home_entrance). */
+    final boolean homeEntrance;
+    /** Home's wallpaper zooms slowly in and out over each picture's interval (wallpaper_drift). */
+    final boolean wallpaperDrift;
     /** Show each rotating wallpaper's name from wallpapers/captions.txt (config.xml / theme wallpaper_captions). */
     final boolean wallpaperCaptions;
     /** Answer VIEW_INPUTS with the Inputs menu (handle_view_inputs); see InputsRequestActivity. */
@@ -297,7 +309,13 @@ final class Config {
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
                    Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean homeIgnoreChannelKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean inputsCecStateOnly,
                    int openOnStartNetworkWait, boolean openOnStartOnWake, boolean iconOnlyVpn, String clockFormat, boolean backOpensClock, boolean glowSnap,
-                   boolean settingsKeyClearTask) {
+                   boolean settingsKeyClearTask, boolean statusPill, boolean clockDate, boolean controlCenter, boolean clockCorner, boolean homeEntrance, boolean wallpaperDrift) {
+        this.clockCorner = clockCorner;
+        this.homeEntrance = homeEntrance;
+        this.wallpaperDrift = wallpaperDrift;
+        this.controlCenter = controlCenter;
+        this.statusPill = statusPill;
+        this.clockDate = clockDate;
         this.handleViewInputs = handleViewInputs;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
@@ -428,6 +446,7 @@ final class Config {
         if (value == null) return GLASS_DEFAULT;
         String v = value.trim();
         if (GLASS_RIM.equalsIgnoreCase(v)) return GLASS_RIM;
+        if (GLASS_SHADOW.equalsIgnoreCase(v)) return GLASS_SHADOW;
         return GLASS_HALO.equalsIgnoreCase(v) ? GLASS_HALO : GLASS_DEFAULT;
     }
 
@@ -546,6 +565,12 @@ final class Config {
         String glassStyle = res.getString(R.string.glass_style);
         boolean singleRow = res.getBoolean(R.bool.single_row);
         boolean dockBandAll = res.getBoolean(R.bool.dock_band_all);
+        boolean statusPill = res.getBoolean(R.bool.status_pill);
+        boolean clockDate = res.getBoolean(R.bool.clock_date);
+        boolean controlCenter = res.getBoolean(R.bool.control_center);
+        boolean clockCorner = res.getBoolean(R.bool.clock_corner);
+        boolean homeEntrance = res.getBoolean(R.bool.home_entrance);
+        boolean wallpaperDrift = res.getBoolean(R.bool.wallpaper_drift);
         boolean applied = false;
 
         File dir = dir(ctx);
@@ -663,6 +688,12 @@ final class Config {
             dockBandAll = bool(json, "dock_band_all", dockBandAll);
             glowStyle = string(json, "glow_style", glowStyle);
             glassStyle = string(json, "glass_style", glassStyle);
+            statusPill = bool(json, "status_pill", statusPill);
+            clockDate = bool(json, "clock_date", clockDate);
+            controlCenter = bool(json, "control_center", controlCenter);
+            clockCorner = bool(json, "clock_corner", clockCorner);
+            homeEntrance = bool(json, "home_entrance", homeEntrance);
+            wallpaperDrift = bool(json, "wallpaper_drift", wallpaperDrift);
         }
         // A top-bar app is moved there, not copied: it leaves the grid.
         for (String pkg : topBarApps) if (!hidden.contains(pkg)) hidden.add(pkg);
@@ -692,7 +723,9 @@ final class Config {
         // An unknown order must not silently change how an existing collection rotates.
         if (!WallpaperRotation.validOrder(wallpaperOrder)) wallpaperOrder = WallpaperRotation.ORDER_SHUFFLE;
         List<File> wallpapers = new ArrayList<>();
-        if (rotationMinutes > 0 && dir != null && wallpaperEnabled) {
+        // clock_wallpaper with "wallpaper": false: the collection plays in the clock screensaver only, while Home keeps
+        // its plain colour or glow (WallpaperPlayer shows nothing without wallpaperEnabled).
+        if (rotationMinutes > 0 && dir != null && (wallpaperEnabled || clockWallpaper)) {
             wallpapers.addAll(WallpaperRotation.images(new File(dir, "wallpapers")));
         }
         if (wallpapers.isEmpty() && wallpaper != null) wallpapers.add(wallpaper);
@@ -727,7 +760,7 @@ final class Config {
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, inputsCecStateOnly,
                 Math.max(0, Math.min(600, openOnStartNetworkWait)), openOnStartOnWake, iconOnlyVpn, clockFormat, backOpensClock, glowSnap,
-                settingsKeyClearTask);
+                settingsKeyClearTask, statusPill, clockDate, controlCenter, clockCorner, homeEntrance, wallpaperDrift);
     }
 
     /**

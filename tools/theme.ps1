@@ -95,7 +95,7 @@ function Drop($name) { "rm -f $dir/$name 2>/dev/null; content delete --uri $uri/
 # empty it too: the launcher's wallpaper picker lists that folder itself, and an on-TV pick of one of its
 # pictures is read back from it, so a reset that left the pictures behind still shows the theme it just removed.
 # Both paths use this one string (the same one theme.sh has).
-$clearWallpapers = "rm -f $dir/wallpapers/*.[jJ][pP][gG] $dir/wallpapers/*.[jJ][pP][eE][gG] $dir/wallpapers/*.[pP][nN][gG] $dir/wallpapers/*.[wW][eE][bB][pP] 2>/dev/null; content delete --uri $uri/wallpapers 2>/dev/null"
+$clearWallpapers = "rm -f $dir/wallpapers/*.[jJ][pP][gG] $dir/wallpapers/*.[jJ][pP][eE][gG] $dir/wallpapers/*.[pP][nN][gG] $dir/wallpapers/*.[wW][eE][bB][pP] $dir/wallpapers/captions-*.txt 2>/dev/null; content delete --uri $uri/wallpapers 2>/dev/null"
 
 if ($Reset) {
     $checkPut = $true
@@ -156,6 +156,12 @@ $captions = Join-Path $Theme 'wallpapers\captions.txt'
 if (Test-Path -LiteralPath $captions -PathType Leaf) {
     Invoke-Tv b64push.py $captions (Stage 'wallpapers/captions.txt')
     Invoke-Tv tv.py (Put 'wallpapers/captions.txt') | Out-Null
+    # Its translations, captions-<language>.txt, read in the launcher's language (themes/README.md).
+    foreach ($t in Get-ChildItem -LiteralPath (Join-Path $Theme 'wallpapers') -Filter 'captions-*.txt' -File) {
+        if ($t.Name -cnotmatch '^captions-[a-z]{2,3}\.txt$') { Write-Warning "Skipping $($t.Name): not captions-<language>.txt"; continue }
+        Invoke-Tv b64push.py $t.FullName (Stage "wallpapers/$($t.Name)")
+        Invoke-Tv tv.py (Put "wallpapers/$($t.Name)") | Out-Null
+    }
 } else {
     Invoke-Tv tv.py (Drop 'wallpapers/captions.txt') | Out-Null
 }

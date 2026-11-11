@@ -1,0 +1,60 @@
+{
+  "columns": 6,
+  "rows_below_dock": 0,
+  "app_library": true,
+  "tile_menu": true,
+  "dock_row": true,
+  "dock_title": false,
+  "dock_glass": true,
+  "dock_even_padding": true,
+  "status_pill": true,
+  "top_bar_apps": [
+    "com.android.vending"
+  ],
+  "glass_style": "shadow",
+  "focus_overshoot": false,
+  "ambient_glow": false,
+  "glow_style": "radial",
+  "app_glow": false,
+  "wallpaper": true,
+  "home_idle_clock_minutes": 5,
+  "key_filter": true,
+  "clock_wallpaper": true,
+  "clock_wallpaper_dim": 25,
+  "clock_date": false,
+  "wallpaper_rotation_minutes": 1,
+  "wallpaper_order": "shuffle",
+  "control_center": true,
+  "wallpaper_dim": 15,
+  "wallpaper_true_color": true,
+  "wallpaper_captions": true,
+  "wallpaper_moods": {
+    "morning": [
+      "cristina-gottardi-CSpjU6hYo_0-unsplash.jpg",
+      "ian-dooley-DuBNA1QMpPA-unsplash.jpg",
+      "kristaps-ungurs-XD5oKCerKCQ-unsplash.jpg",
+      "martin-wettstein-4CVMWrWh3xU-unsplash.jpg",
+      "nadine-marfurt-Hom2rJ51jaQ-unsplash.jpg"
+    ],
+    "evening": [
+      "anders-jilden-AkUR27wtaxs-unsplash.jpg",
+      "anders-jilden-cYrMQA7a3Wc-unsplash.jpg",
+      "cedric-letsch-raNGlrn5JRI-unsplash.jpg",
+      "garrett-parker-DlkF4-dbCOU-unsplash.jpg",
+      "luca-bravo-TaCk3NspYe0-unsplash.jpg",
+      "marek-piwnicki-7c4Gxa6598I-unsplash.jpg",
+      "wietse-jongsma-CS5QSvNtsg8-unsplash.jpg"
+    ],
+    "night": [
+      "ahmet-yuksek-1E3gWJFOXms-unsplash.jpg",
+      "alexander-slattery-LI748t0BK8w-unsplash.jpg",
+      "edewaa-foster-aWkpMIIC5aY-unsplash.jpg",
+      "john-towner-JgOeRuGD_Y4-unsplash.jpg",
+      "jonatan-pie-3l3RwQdHRHg-unsplash.jpg",
+      "matteo-catanese-dVCGpKZB_E8-unsplash.jpg"
+    ]
+  },
+  "clock_corner": true,
+  "home_entrance": true,
+  "wallpaper_drift": true
+}

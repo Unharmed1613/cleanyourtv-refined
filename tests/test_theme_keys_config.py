@@ -43,6 +43,7 @@ JAVA_DIR = ROOT / "launcher" / "app" / "src" / "main" / "java" / "com" / "gathin
 CONFIG_JAVA = JAVA_DIR / "Config.java"
 SYSTEM_SETTINGS = JAVA_DIR / "SystemSettings.java"
 SKY_VIEW = JAVA_DIR / "SkyView.java"
+ZONE_COORDINATES = JAVA_DIR / "ZoneCoordinates.java"
 
 # A key is lowercase to stay readable next to `config.xml`; `app_keys` qualifies, a backticked value such
 # as `false` or `#RRGGBB` does not.
@@ -249,13 +250,15 @@ class KeysTableCoversConfigXmlTest(unittest.TestCase):
 
     def test_the_exemption_is_still_right(self):
         # latitude and longitude stay out of the table (tests/test_sky_place_note.py requires it), so
-        # they may only stay out while they are what that page describes: config.xml lines SkyView reads.
+        # they may only stay out while they are what that page describes: config.xml lines ZoneCoordinates reads
+        # for SkyView (and wallpaper_moods).
         config = config_keys(self.config)
-        sky = SKY_VIEW.read_text(encoding="utf-8")
+        sky = ZONE_COORDINATES.read_text(encoding="utf-8")
+        self.assertIn("ZoneCoordinates.place(", SKY_VIEW.read_text(encoding="utf-8"))
         for name in EXEMPT:
             with self.subTest(key=name):
                 self.assertIn(name, config, f"`{name}` is gone from config.xml: drop its EXEMPT entry")
-                self.assertIn(f"R.string.{name}", sky, f"SkyView.java no longer reads `{name}`: is the "
+                self.assertIn(f"R.string.{name}", sky, f"ZoneCoordinates.java no longer reads `{name}`: is the "
                                                       f"docs/sky.md page still right?")
                 self.assertNotIn(name, table_keys(self.text),
                                  f"`{name}` is in the Keys table now: drop its EXEMPT entry")

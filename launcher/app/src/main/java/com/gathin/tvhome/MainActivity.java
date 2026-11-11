@@ -61,11 +61,13 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.animation.AnimationUtils;
+import android.view.animation.DecelerateInterpolator;
 import android.view.animation.LayoutAnimationController;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import android.widget.TextClock;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -104,6 +106,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private static final int LAUNCHER_SETTINGS_REQUEST = 42;
     /** Sent by QuickSettingsActivity: open Launcher settings from here so Home rebuilds when they close. */
     static final String ACTION_LAUNCHER_SETTINGS = "com.gathin.tvhome.action.LAUNCHER_SETTINGS";
+    /** control_center's rows that act on Home itself: EXTRA_COMMAND says which (COMMAND_*). */
+    static final String ACTION_HOME_COMMAND = "com.gathin.tvhome.action.HOME_COMMAND";
+    static final String EXTRA_COMMAND = "command", COMMAND_ARRANGE = "arrange", COMMAND_MODULES = "modules";
     /** Sent by the "library" action word of app_keys: open the App library over Home (needs app_library). */
     static final String ACTION_APP_LIBRARY = "com.gathin.tvhome.action.APP_LIBRARY";
     /** The system input switcher, forwarded here by InputsRequestActivity while handle_view_inputs is on. */
@@ -480,6 +485,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         animations = cfg.animations;
         advancedEffects = cfg.animations && cfg.advancedEffects;
         reducedMotion = cfg.reducedMotion;
+        homeEntrance = cfg.homeEntrance;
         dockRow = cfg.dockRow;
         singleRow = cfg.singleRow;
         focusOvershoot = cfg.focusOvershoot;
@@ -609,7 +615,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             date.setPadding(0, (int) (4 * density), 0, 0);
         }
         vpnApp = cfg.vpnApp;
-        vpnPill = cfg.vpnPill && !cfg.topMenu;
+        vpnPill = cfg.vpnPill && !cfg.topMenu && !cfg.statusPill;
         btnVpn = findViewById(R.id.btnVpn);
         moduleCards = cfg.moduleCards;
         hiddenApps = new HashSet<>(cfg.hiddenApps);
@@ -688,8 +694,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             public void onChildViewDetachedFromWindow(@NonNull View v) {
             }
         });
-        if (dockRow) grid.addItemDecoration(new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity, cfg.dockGlass, cfg.dockEvenPadding, cfg.dockBand,
-                singleRow, cfg.dockBandAll));
+        dockDecoration = null;
+        if (dockRow) {
+            dockDecoration = new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity, cfg.dockGlass,
+                    cfg.dockEvenPadding, cfg.dockBand, singleRow, cfg.dockBandAll);
+            grid.addItemDecoration(dockDecoration);
+        }
+
         if (cfg.fadeRows) TopFade.attach(grid, 48 * density);
         // Reduced motion: the tiles are simply there, with no entrance (reloadApps skips it there too).
         if (animations && !reducedMotion) {
@@ -896,6 +907,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             showSettingsMenu();
             return true;
         });
+        statusPill = cfg.statusPill;
+        if (statusPill) setUpStatusPill((TextView) btnSettings, cfg.controlCenter);
+        // The light glass over a wallpaper: tinted darker over a bright picture, so it does not vanish into it.
+        // After the pill is built, as the listener is told the picture already on screen straight away.
+        if (cfg.dockGlass || statusPill) wallpaperPlayer.setToneListener(this::applyGlassTone);
 
         // Keep focus on the top bar at its ends and at the top: Android's focus finder would otherwise
         // jump to a tile far below when there is nothing in that direction.
@@ -910,7 +926,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             }
             int firstButton = btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : firstTopButton().getId();
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
-            int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
+            // status_pill puts Settings first, so the bar ends at whichever button comes last there.
+            int rightButton = rtlMenuBar ? firstButton : statusPill ? lastTopButton().getId() : R.id.btnSettings;
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return v.getId() == leftButton;
             return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton;
         };
@@ -997,7 +1014,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean openInputsIfAsked(Intent intent) {
         if (intent == null || !ACTION_VIEW_INPUTS.equals(intent.getAction())) return false;
         setIntent(new Intent(Intent.ACTION_MAIN));
-        View anchor = topMenu ? findViewById(R.id.btnSettings) : btnInputs;
+        View anchor = topMenu || statusPill ? findViewById(R.id.btnSettings) : btnInputs;
         if (anchor.getVisibility() != View.VISIBLE) return true;
         if (anchor.isLaidOut()) {
             // Android 9 delivers a new intent to a paused activity with a brief resume and pause around it, and
@@ -1039,6 +1056,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         return true;
     }
 
+    /** A control_center row for Home itself: arrange the apps, or the module cards. Once the panel has gone. */
+    private boolean runHomeCommandIfAsked(Intent intent) {
+        if (intent == null || !ACTION_HOME_COMMAND.equals(intent.getAction())) return false;
+        String command = intent.getStringExtra(EXTRA_COMMAND);
+        setIntent(new Intent(Intent.ACTION_MAIN));
+        root.post(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            if (COMMAND_ARRANGE.equals(command)) {
+                if (!reordering) toggleReorder();
+            } else if (COMMAND_MODULES.equals(command)) {
+                showModuleCards();
+            }
+        });
+        return true;
+    }
+
     private boolean openLauncherSettingsIfAsked(Intent intent) {
         if (intent == null || !ACTION_LAUNCHER_SETTINGS.equals(intent.getAction())) return false;
         setIntent(new Intent(Intent.ACTION_MAIN));
@@ -1055,6 +1088,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (openLauncherSettingsIfAsked(intent)) return;
+        if (runHomeCommandIfAsked(intent)) return;
         if (openLibraryIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
@@ -1084,12 +1118,39 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         updateClockVisibility();
         clockRefresh.start();   // with timeReceiver: while Home is visible, paused or not
         tileRefresh.onStart();
+        if (homeEntrance) playEntrance();
+    }
+
+    /** home_entrance (Config): set in onCreate. */
+    private boolean homeEntrance;
+
+    /**
+     * home_entrance: Home comes back on screen (power on, back from an app or the screensaver) with the wallpaper fading
+     * in, the dock rising into place and the top bar after it. onStart only: the Control Centre and other panels over
+     * Home do not stop it, so closing them shows nothing new.
+     */
+    private void playEntrance() {
+        if (!animations || reducedMotion || grid == null) return;
+        View bar = findViewById(R.id.topButtons);
+        float rise = 28 * density;
+        grid.animate().cancel();
+        grid.setAlpha(0f);
+        grid.setTranslationY(rise);
+        grid.animate().alpha(1f).translationY(0f).setStartDelay(120).setDuration(560)
+                .setInterpolator(new DecelerateInterpolator(2f)).withLayer().start();
+        if (bar != null) {
+            bar.animate().cancel();
+            bar.setAlpha(0f);
+            bar.animate().alpha(1f).setStartDelay(300).setDuration(420).start();
+        }
+        wallpaperPlayer.fadeIn(520);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         resumed = true;
+        if (wallpaperPlayer != null) wallpaperPlayer.hideCaption(false);   // shown again after the Control Centre
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -2167,6 +2228,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         // The default tint mode, SRC_IN, keeps the mask's alpha and takes the colour from the tint.
         glow.setTint(0xFF000000 | color);
+        tintStatusPill(color);
     }
 
     private void transitionAmbient(int color) {
@@ -2567,9 +2629,185 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         int n = bar.getChildCount();
         for (int k = 0; k < n; k++) {
             View button = bar.getChildAt(rtl ? n - 1 - k : k);
-            if (button != btnInputs && button.getVisibility() == View.VISIBLE) return button;
+            if (button != btnInputs && button.getVisibility() == View.VISIBLE && button.isFocusable()) return button;
         }
         return findViewById(R.id.btnSettings);
+    }
+
+    /** The last top-bar button that is shown, in bar order. */
+    private View lastTopButton() {
+        ViewGroup bar = findViewById(R.id.topButtons);
+        for (int i = bar.getChildCount() - 1; i >= 0; i--) {
+            View button = bar.getChildAt(i);
+            if (button.getVisibility() == View.VISIBLE && button.isFocusable()) return button;
+        }
+        return findViewById(R.id.btnSettings);
+    }
+
+    /** status_pill (config.xml): the top bar is one glass capsule holding the time and the buttons. */
+    private boolean statusPill;
+    /** The time inside that capsule; null without status_pill. */
+    private TextClock pillClock;
+    /** The colour layer under the capsule's glass; null without status_pill. */
+    private GradientDrawable pillTint;
+
+    /** Lets the focused app's colour show through the status_pill glass, about as strongly as it does through the dock. */
+    private void tintStatusPill(int color) {
+        if (pillTint != null) pillTint.setColor(0x38000000 | (color & 0xFFFFFF));
+    }
+
+    /**
+     * status_pill: the top bar as one small glass capsule at the top right, like tvOS. It holds the time, then
+     * Settings, then the top_bar_apps (and the reorder and library buttons, where a theme shows them) as round
+     * segments that turn white when focused. The block at the top left (greeting, clock, date) and the Inputs,
+     * network and VPN pills are not shown at all.
+     */
+    private void setUpStatusPill(TextView btnSettings, boolean controlCenter) {
+        clockBlock.setVisibility(View.GONE);
+        showInputsPill = false;
+        btnInputs.setVisibility(View.GONE);
+        btnWifi.setVisibility(View.GONE);
+        btnVpn.setVisibility(View.GONE);
+        if (btnSettings.getText().length() > 0) makeIconOnly(btnSettings);
+
+        LinearLayout bar = findViewById(R.id.topButtons);
+        // The bar no longer hangs on the clock block's bottom line: it is the header's only row now.
+        RelativeLayout.LayoutParams barLp = (RelativeLayout.LayoutParams) bar.getLayoutParams();
+        barLp.removeRule(RelativeLayout.ALIGN_BOTTOM);
+        barLp.removeRule(RelativeLayout.ALIGN_TOP);
+        barLp.bottomMargin = 0;
+        bar.setLayoutParams(barLp);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        // The glass over a layer in the focused app's colour (setAmbient): the dock sits in that app's glow and its
+        // glass takes the colour, while the capsule sits in the dark corner, so without this it read as plain grey.
+        pillTint = new GradientDrawable();
+        pillTint.setCornerRadius(24 * density);
+        pillTint.setColor(Color.TRANSPARENT);
+        bar.setBackground(new android.graphics.drawable.LayerDrawable(new Drawable[]{
+                pillTint, getDrawable(R.drawable.status_pill_bg)}));
+        if (ambientGlow && ambientColor != -1) tintStatusPill(ambientColor);
+        int edge = Math.round(3 * density);
+        bar.setPadding(edge, edge, edge, edge);
+
+        pillClock = new TextClock(this);
+        pillClock.setFormat12Hour("h:mm");
+        pillClock.setFormat24Hour("HH:mm");
+        pillClock.setTextColor(Color.WHITE);
+        pillClock.setTextSize(15f);
+        pillClock.setTypeface(UiFont.get(this, R.string.font_medium));
+        pillClock.setIncludeFontPadding(false);
+        pillClock.setSingleLine(true);
+        pillClock.setPaddingRelative(Math.round(13 * density), 0, Math.round(7 * density), 0);
+        pillClock.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        boolean rtlMenuBar = getResources().getBoolean(R.bool.rtl_menu_bar);
+        if (rtlMenuBar) {
+            // The Hebrew bar runs the other way and keeps its own order: the time closes it on the right.
+            bar.addView(pillClock);
+        } else {
+            bar.removeView(btnSettings);
+            bar.addView(btnSettings, 0);
+            bar.addView(pillClock, 0);
+        }
+
+
+        // 36dp circles inside the 42dp capsule, with the 22dp icon centred by even padding.
+        int size = Math.round(36 * density), pad = Math.round(7 * density), gap = Math.round(2 * density);
+        for (int i = 0; i < bar.getChildCount(); i++) {
+            View button = bar.getChildAt(i);
+            if (button == pillClock) continue;
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) button.getLayoutParams();
+            lp.width = size;
+            lp.height = size;
+            lp.setMarginStart(gap);
+            button.setLayoutParams(lp);
+            // A right-pointing triangle has its weight in its left third, so centred by its box it looks too far
+            // left: the Play Store logo sits 3dp right of the middle, like a play button's glyph does.
+            int nudge = "com.android.vending".equals(button.getTag()) ? Math.round(3 * density) : 0;
+            button.setPaddingRelative(pad + nudge, 0, pad - nudge, 0);
+            button.setBackgroundResource(R.drawable.status_pill_segment_bg);
+        }
+
+        // The gear opens TV Settings on its main page. Opened plainly, Settings came back on whatever page its
+        // task was left at (Default home app on the Strong box), as the remote's Settings button can with
+        // settings_key_clear_task; launcher_settings_button keeps its own target.
+        if (controlCenter) {
+            // control_center: the gear is the one settings button. A press opens the Control Centre, which holds
+            // TV Settings, Launcher settings and the rest of the hold menu; no hold, as some remotes never send one.
+            btnSettings.setOnClickListener(v -> openControlCenter(bar));
+            btnSettings.setOnLongClickListener(null);
+            btnSettings.setLongClickable(false);
+        } else if (!launcherSettingsButton) {
+            btnSettings.setOnClickListener(v -> open(systemIntent(Settings.ACTION_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK)));
+        }
+    }
+
+    /**
+     * True when the Inputs list would have something to switch to: an HDMI or AV port, the TV's own tuner app, or
+     * a vendor source panel. A streaming box lists only apps' channel inputs, so the Control Centre leaves it out.
+     */
+    private boolean hasInputs() {
+        if (coocaaSources && !CoocaaSources.list(this).isEmpty()) return true;
+        if (!sourcePanelService.isEmpty() || liveTvIntent() != null) return true;
+        TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
+        if (tim == null) return false;
+        try {
+            for (TvInputInfo info : tim.getTvInputList()) {
+                if (info.isPassthroughInput() && !info.isHidden(this)) return true;
+            }
+        } catch (RuntimeException e) {
+            return false;
+        }
+        return false;
+    }
+
+    /** The dock band, kept for applyGlassTone; null without dock_row. */
+    private DockDecoration dockDecoration;
+    private android.animation.ValueAnimator glassToneAnimator;
+
+    /**
+     * WallpaperPlayer measured a new picture: tint the dock's light glass and the status pill darker over a bright one
+     * (GlassTone), fading across the picture's own fade. The pill keeps the app's colour while the ambient glow gives it one.
+     */
+    private void applyGlassTone(float dock, float pill) {
+        int dockTo = GlassTone.shadeAlpha(dock), pillTo = GlassTone.shadeAlpha(pill);
+        int dockFrom = dockDecoration != null ? dockDecoration.shade() : 0;
+        boolean tintPill = pillTint != null && !(ambientGlow && ambientColor != -1);
+        int pillFrom = tintPill ? (pillTint.getColor() == null ? 0 : pillTint.getColor().getDefaultColor() >>> 24) : 0;
+        if (glassToneAnimator != null) glassToneAnimator.cancel();
+        android.animation.ValueAnimator a = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        a.setDuration(animations ? 900 : 0);
+        a.addUpdateListener(v -> {
+            float f = v.getAnimatedFraction();
+            if (dockDecoration != null) {
+                dockDecoration.setShade(Math.round(dockFrom + (dockTo - dockFrom) * f));
+                grid.invalidateItemDecorations();
+            }
+            if (tintPill) pillTint.setColor(Math.round(pillFrom + (pillTo - pillFrom) * f) << 24);
+        });
+        glassToneAnimator = a;
+        a.start();
+    }
+
+    /** control_center: the panel hangs under the pill, its right edge in line with the pill's. */
+    @SuppressWarnings("deprecation")
+    private void openControlCenter(View pill) {
+        int[] at = new int[2];
+        pill.getLocationInWindow(at);
+        int end = getWindow().getDecorView().getWidth() - (at[0] + pill.getWidth());
+        int top = at[1] + pill.getHeight() + Math.round(10 * density);
+        if (wallpaperPlayer != null) wallpaperPlayer.hideCaption(true);
+        try {
+            startActivity(new Intent(this, ControlCenterActivity.class)
+                    .putExtra(ControlCenterActivity.EXTRA_END, end).putExtra(ControlCenterActivity.EXTRA_TOP, top)
+                    .putExtra(ControlCenterActivity.EXTRA_INPUTS, hasInputs())
+                    .putExtra(ControlCenterActivity.EXTRA_ARRANGE, adapter.movableCount() >= 2)
+                    .putExtra(ControlCenterActivity.EXTRA_MODULES, moduleCards && !cards.isEmpty())
+                    .putExtra(ControlCenterActivity.EXTRA_VENDOR_SETTINGS, SystemSettings.vendorIntent(this) != null));
+            overridePendingTransition(0, 0);   // the panel drops in by itself
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
+        }
     }
 
     /** top_bar_apps buttons, in bar order. */
@@ -2606,8 +2844,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             button.setId(View.generateViewId());
             logo.setBounds(0, 0, size, size);
             button.setCompoundDrawablesRelative(logo, null, null, null);
-            button.setCompoundDrawableTintList(null);
+            if ("com.android.vending".equals(pkg)) {
+                // The Play Store as a plain glyph like the gear beside it: white, dark on the focused white pill.
+                button.setCompoundDrawableTintList(new ColorStateList(
+                        new int[][]{new int[]{android.R.attr.state_focused}, new int[]{}},
+                        new int[]{Color.BLACK, Color.WHITE}));
+            } else {
+                button.setCompoundDrawableTintList(null);
+            }
             button.setContentDescription(label);
+            button.setTag(pkg);   // status_pill nudges the Play Store's triangle to its optical centre
             Intent target = launch;
             button.setOnClickListener(v -> open(new Intent(target)));
             // After the network pill and the VPN pill; the Hebrew bar runs the other way, so before both there.
@@ -2717,7 +2963,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private void updateClockVisibility() {
         boolean valid = System.currentTimeMillis() >= TIME_VALID_AFTER_MS;
-        clockBlock.setVisibility(valid ? View.VISIBLE : View.INVISIBLE);
+        if (statusPill) pillClock.setVisibility(valid ? View.VISIBLE : View.GONE);
+        else clockBlock.setVisibility(valid ? View.VISIBLE : View.INVISIBLE);
         handler.removeCallbacks(clockCheck);
         if (valid) {
             updateGreeting();
@@ -3412,7 +3659,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // top_menu: the pill is gone, so the list hangs under the gear, growing inward from the right.
         // Read the switch, not the pill: show_inputs_pill=false hides the pill too, and there the list
         // keeps its usual place.
-        boolean underGear = topMenu;
+        // status_pill hides the Inputs pill too: there the gear is the one place to hang the list from.
+        boolean underGear = topMenu || statusPill;
         View anchor = findViewById(underGear ? R.id.btnSettings : R.id.btnInputs);
         View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);

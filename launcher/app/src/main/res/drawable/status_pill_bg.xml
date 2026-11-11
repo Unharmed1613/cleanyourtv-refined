@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- status_pill: the one glass capsule behind the time and the top bar's buttons. 24dp corners: a 42dp row of
+     buttons plus 3dp padding all round. The same frosted glass as the dock band with dock_glass (DockDecoration):
+     a white tint fading downwards and a faint edge. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:angle="270" android:startColor="#24FFFFFF" android:endColor="#0DFFFFFF" />
+    <stroke android:width="1dp" android:color="#1AFFFFFF" />
+    <corners android:radius="24dp" />
+</shape>

@@ -370,14 +370,14 @@ def app_keys_problem(values):
 
 # The string keys a Keys-table row names the values of, with the one the launcher answers instead and whether its
 # reader ignores case. Config.glowStyle() is `GLOW_HORIZON.equalsIgnoreCase(value.trim()) ? GLOW_HORIZON :
-# GLOW_RADIAL` and glassStyle() answers glass to anything else; WallpaperRotation.validOrder() is
+# GLOW_RADIAL` and glassStyle() answers glass to anything but rim, halo and shadow; WallpaperRotation.validOrder() is
 # `ORDER_SEQUENTIAL.equals(order) || ORDER_SHUFFLE.equals(order)`, so `Sequential` is shuffle; ClockFormat applies
 # "12" or "24" and lets every other mode follow the TV, which is what `system` means, so a capital in SYSTEM is the
 # same mode. A value outside these sets is not an error on the TV - the default comes back - so set would report a
 # switch it left where it was, the dead `"glow_style": "off"` #3429 removed from two themes.
 ENUMS = {
     "glow_style": (("radial", "horizon"), "radial", True),
-    "glass_style": (("glass", "rim", "halo"), "glass", True),
+    "glass_style": (("glass", "rim", "halo", "shadow"), "glass", True),
     "clock_format": (("12", "24", "system"), "system", True),
     "wallpaper_order": (("shuffle", "sequential"), "shuffle", False),
 }

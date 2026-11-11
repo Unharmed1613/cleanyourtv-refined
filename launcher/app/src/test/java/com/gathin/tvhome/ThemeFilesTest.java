@@ -24,6 +24,8 @@ public class ThemeFilesTest {
 
     @Test public void theCollectionsCaptionsAreAllowed() {
         assertEquals("wallpapers/captions.txt", ThemeFiles.path(Arrays.asList("wallpapers", "captions.txt")));
+        assertEquals("wallpapers/captions-de.txt", ThemeFiles.path(Arrays.asList("wallpapers", "captions-de.txt")));
+        assertNull(ThemeFiles.path(Arrays.asList("wallpapers", "captions-..txt")));
         assertNull(ThemeFiles.path(Collections.singletonList("captions.txt")));
         assertNull(ThemeFiles.path(Arrays.asList("wallpapers", "notes.txt")));
         assertFalse(ThemeFiles.collectionImage("captions.txt"));

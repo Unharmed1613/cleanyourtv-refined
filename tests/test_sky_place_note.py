@@ -19,6 +19,7 @@ THEMES_DOC = ROOT / "themes" / "README.md"
 CONFIG_XML = ROOT / "launcher" / "app" / "src" / "main" / "res" / "values" / "config.xml"
 SKY_JAVA = ROOT / "launcher" / "app" / "src" / "main" / "java" / "com" / "gathin" / "tvhome" / "Sky.java"
 SKY_VIEW_JAVA = SKY_JAVA.with_name("SkyView.java")
+ZONE_COORDINATES_JAVA = SKY_JAVA.with_name("ZoneCoordinates.java")
 CONFIG_JAVA = SKY_JAVA.with_name("Config.java")
 
 HEADING = "## Where the sun is"
@@ -114,7 +115,9 @@ class SkyPlaceSection(unittest.TestCase):
                       f"the page should give the reference sunset, {times['REF_SUNSET']}")
 
     def test_skyview_is_what_reads_them(self):
-        view = SKY_VIEW_JAVA.read_text(encoding="utf-8")
+        # SkyView asks ZoneCoordinates, which reads the two lines and falls back to the time zone's city.
+        self.assertIn("ZoneCoordinates.place(", SKY_VIEW_JAVA.read_text(encoding="utf-8"))
+        view = ZONE_COORDINATES_JAVA.read_text(encoding="utf-8")
         for name in ("latitude", "longitude"):
             self.assertIn(f"R.string.{name}", view,
                           f"SkyView no longer reads R.string.{name}: the page points at the wrong knob")

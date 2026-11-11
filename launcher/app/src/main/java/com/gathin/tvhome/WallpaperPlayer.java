@@ -5,6 +5,9 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.TransitionDrawable;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -44,10 +47,46 @@ final class WallpaperPlayer {
     /** config wallpaper_true_color: ARGB_8888 instead of RGB_565. */
     private final Bitmap.Config bitmapConfig;
     private final int height;
+    /** The size each picture is decoded to cover: the screen, or the screen at the zoom's far end with drift. */
+    private final int decodeWidth, decodeHeight;
     /** wallpaper_dim as an ARGB black, painted into each picture once instead of a full-screen shade view. */
     private final int dimColor;
     /** The picture on screen, released once the next one has been drawn. */
     private Bitmap current;
+    /** How long a rotation's next picture takes to fade in over the last one. */
+    private static final int FADE_MS = 900;
+    /**
+     * Where the light glass sits over the picture, as fractions of the screen (left, top, right, bottom): the dock
+     * band in the lower third and the status pill at the top right. GlassTone tints the glass by their brightness.
+     */
+    private static final float[] DOCK_AREA = {0.06f, 0.69f, 0.94f, 0.90f};
+    private static final float[] PILL_AREA = {0.74f, 0.04f, 0.95f, 0.13f};
+    /** The tone listener and the last picture's {dock, pill} brightness (0 to 1; -1 unknown), measured in decode(). */
+    private ToneListener toneListener;
+    /** wallpaper_drift: the slow zoom over each picture, in on one and back out on the next. */
+    private final boolean drift;
+    private boolean zoomIn = true;
+    private static final float DRIFT_SCALE = 1.06f;
+    /**
+     * The zoom moves the picture's edge by a tenth of a pixel per step, so 15 steps a second look as smooth as 60 and
+     * Home is not redrawn at the full frame rate the whole time it is on screen.
+     */
+    private static final long DRIFT_STEP_MS = 66;
+    private float driftFrom, driftTo;
+    private long driftStart, driftLength;
+    private final Runnable driftStep = new Runnable() {
+        @Override
+        public void run() {
+            float f = driftLength <= 0 ? 1f
+                    : Math.min(1f, (android.os.SystemClock.uptimeMillis() - driftStart) / (float) driftLength);
+            float scale = driftFrom + (driftTo - driftFrom) * f;
+            image.setScaleX(scale);
+            image.setScaleY(scale);
+            if (f < 1f) image.postDelayed(this, DRIFT_STEP_MS);
+        }
+    };
+    private volatile float decodedDockTone = -1f, decodedPillTone = -1f;
+    private float dockTone = -1f, pillTone = -1f;
     private boolean active;
     private boolean closed;
     private boolean loading;
@@ -65,16 +104,21 @@ final class WallpaperPlayer {
     WallpaperPlayer(Context context, FrameLayout root, Config config) {
         this.root = root;
         backgroundColor = config.backgroundColor;
-        files = new ArrayList<>(config.wallpapers);
+        // Without wallpaperEnabled the collection is the clock screensaver's alone (clock_wallpaper): Home neither shows
+        // nor rotates it.
+        files = config.wallpaperEnabled ? new ArrayList<>(config.wallpapers) : new ArrayList<>();
         interval = config.wallpaperRotationMinutes * 60_000L;
+        drift = config.wallpaperDrift && interval > 0;
         bitmapConfig = config.wallpaperTrueColor ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
         // The dim is painted into the picture (decode), so no full-screen shade layer is drawn on every frame.
         dimColor = config.wallpaperDim > 0 ? (config.wallpaperDim * 255 / 100) << 24 : 0;
         order = config.wallpaperOrder;
         preferences = context.getSharedPreferences("wallpaper_rotation", Context.MODE_PRIVATE);
         moods = config.wallpaperMoods;
-        latitude = moods.isEmpty() ? "" : context.getString(R.string.latitude);
-        longitude = moods.isEmpty() ? "" : context.getString(R.string.longitude);
+        // config.xml's place, or the reference city of the TV's time zone (ZoneCoordinates).
+        String[] place = moods.isEmpty() ? new String[]{"", ""} : ZoneCoordinates.place(context, ZoneId.systemDefault());
+        latitude = place[0];
+        longitude = place[1];
         // Playback state belongs to one collection. Changing the collection starts from its first
         // picture instead of resuming a filename that belonged to the previous one.
         String collection = collectionKey(files);
@@ -85,12 +129,17 @@ final class WallpaperPlayer {
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         width = metrics.widthPixels;
         height = metrics.heightPixels;
+        // wallpaper_drift: decode the picture as large as it gets at the zoom's far end, so the zoom only ever
+        // shrinks a sharp picture into the screen and never stretches one past its pixels.
+        decodeWidth = drift ? (int) Math.ceil(width * DRIFT_SCALE) : width;
+        decodeHeight = drift ? (int) Math.ceil(height * DRIFT_SCALE) : height;
         image = new ImageView(context);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
         image.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         names = config.wallpaperCaptions && config.wallpaperEnabled && !files.isEmpty()
-                ? WallpaperCaptions.read(files.get(0).getParentFile()) : Collections.emptyMap();
-        caption = names.isEmpty() ? null : makeCaption(context, root);
+                ? WallpaperCaptions.read(files.get(0).getParentFile(),
+                        context.getResources().getConfiguration().getLocales().get(0)) : Collections.emptyMap();
+        caption = names.isEmpty() ? null : makeCaption(context, root, config.statusPill);
         if (config.wallpaperEnabled && !files.isEmpty()) {
             root.addView(image, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -111,7 +160,7 @@ final class WallpaperPlayer {
         while (first != null) {
             Bitmap bitmap = decode(first);
             if (bitmap != null) {
-                show(bitmap);
+                show(bitmap, false);
                 // The picture covers the whole screen: the root's plain colour under it is overdraw.
                 root.setBackground(null);
                 displayed = first.getName();
@@ -131,10 +180,34 @@ final class WallpaperPlayer {
     void start() {
         active = true;
         update();
+        if (drift && current != null) driftOn(false);
     }
 
     void stop() {
         active = false;
+        image.removeCallbacks(driftStep);   // the zoom only runs while Home is on screen; start() carries it on
+    }
+
+    /** home_entrance: the picture fades in from black. */
+    void fadeIn(int ms) {
+        if (current == null) return;
+        image.setAlpha(0f);
+        image.animate().alpha(1f).setDuration(ms).start();
+    }
+
+    /**
+     * wallpaper_drift: zoom towards the next end (1 or DRIFT_SCALE) over one interval. A new picture (next) turns the
+     * direction round; a restart after a pause carries on the same way from where the picture stands.
+     */
+    private void driftOn(boolean next) {
+        if (!drift) return;
+        if (next) zoomIn = !zoomIn;
+        driftTo = zoomIn ? DRIFT_SCALE : 1f;
+        driftFrom = image.getScaleX();
+        driftLength = Math.max(1000L, Math.round(interval * Math.abs(driftTo - driftFrom) / (DRIFT_SCALE - 1f)));
+        driftStart = android.os.SystemClock.uptimeMillis();
+        image.removeCallbacks(driftStep);
+        image.post(driftStep);
     }
 
     /** Drops the wallpaper texture when Home is hidden and Android asks the process to free memory. */
@@ -157,6 +230,11 @@ final class WallpaperPlayer {
             sun = WallpaperMood.sun(sunDay, latitude, longitude, ZoneId.systemDefault());
         }
         return WallpaperMood.select(files, moods, WallpaperMood.timeOfDay(now.getHour() * 60 + now.getMinute(), sun[0], sun[1]));
+    }
+
+    /** The Control Centre hangs where the caption sits: hidden while it is open, back once Home is in front again. */
+    void hideCaption(boolean hidden) {
+        if (caption != null) caption.setVisibility(hidden ? View.INVISIBLE : View.VISIBLE);
     }
 
     void close() {
@@ -192,7 +270,7 @@ final class WallpaperPlayer {
                     update();
                     return;
                 }
-                show(bitmap);
+                show(bitmap, true);
                 displayed = next.getName();
                 showCaption(true);
                 if (!displayed.equals(previous) || changed == 0) {
@@ -207,7 +285,7 @@ final class WallpaperPlayer {
      * Small light text under the top-right buttons, above everything else and never focusable. It sits where the
      * top bar ends in every layout, so it does not cover the clock, the stats line or the tiles.
      */
-    private static TextView makeCaption(Context context, FrameLayout root) {
+    private static TextView makeCaption(Context context, FrameLayout root, boolean underPill) {
         float dp = context.getResources().getDisplayMetrics().density;
         TextView text = new TextView(context);
         text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
@@ -225,7 +303,8 @@ final class WallpaperPlayer {
         }
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
-        params.topMargin = Math.round(110 * dp);
+        // status_pill is a single slim row: the name sits just under it rather than under the taller header.
+        params.topMargin = Math.round((underPill ? 80 : 110) * dp);
         params.setMarginEnd(Math.round(62 * dp));
         root.addView(text, params);
         return text;
@@ -259,14 +338,47 @@ final class WallpaperPlayer {
         return key.toString();
     }
 
-    /** Puts a picture on screen and releases the previous one after a frame has drawn the new one. */
-    private void show(Bitmap bitmap) {
+    /** Told the brightness behind the dock and the pill each time a picture goes on screen. */
+    interface ToneListener {
+        void onWallpaperTone(float dock, float pill);
+    }
+
+    /** Sets the listener and tells it the picture already on screen, if there is one. */
+    void setToneListener(ToneListener listener) {
+        toneListener = listener;
+        if (listener != null && current != null) listener.onWallpaperTone(dockTone, pillTone);
+    }
+
+    /**
+     * Puts a picture on screen and releases the previous one once it is no longer drawn. A rotation's next picture
+     * (fade) fades in over the last one; Home's first picture is simply there.
+     */
+    private void show(Bitmap bitmap, boolean fade) {
         Bitmap old = current;
         current = bitmap;
         // The wallpaper covers the whole root; avoid drawing the fallback colour under it.
         root.setBackground(null);
-        image.setImageBitmap(bitmap);
-        if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
+        BitmapDrawable next = new BitmapDrawable(root.getResources(), bitmap);
+        Drawable previous = image.getDrawable();
+        if (previous instanceof TransitionDrawable) previous = ((TransitionDrawable) previous).getDrawable(1);
+        if (fade && previous != null && old != null) {
+            TransitionDrawable crossFade = new TransitionDrawable(new Drawable[]{previous, next});
+            crossFade.setCrossFadeEnabled(true);
+            image.setImageDrawable(crossFade);
+            crossFade.startTransition(FADE_MS);
+            // The finished fade still holds the old picture: swap it for the new one alone before recycling it.
+            image.postDelayed(() -> {
+                if (image.getDrawable() == crossFade) image.setImageDrawable(next);
+                if (old != current) old.recycle();
+            }, FADE_MS + 400);
+        } else {
+            image.setImageDrawable(next);
+            if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
+        }
+        if (drift && active) driftOn(fade);
+        dockTone = decodedDockTone;
+        pillTone = decodedPillTone;
+        if (toneListener != null) toneListener.onWallpaperTone(dockTone, pillTone);
     }
 
     private Bitmap decode(File file) {
@@ -276,11 +388,11 @@ final class WallpaperPlayer {
             BitmapFactory.decodeFile(file.getPath(), options);
             int width = options.outWidth, height = options.outHeight;
             if (width <= 0 || height <= 0) return null;
-            int sample = WallpaperSize.sampleSize(width, height, this.width, this.height);
+            int sample = WallpaperSize.sampleSize(width, height, decodeWidth, decodeHeight);
             if (!WallpaperSize.accepted(width / sample, height / sample)) return null;
             options.inJustDecodeBounds = false;
             options.inSampleSize = sample;
-            int[] scale = WallpaperSize.coverScale(width / sample, height / sample, this.width, this.height);
+            int[] scale = WallpaperSize.coverScale(width / sample, height / sample, decodeWidth, decodeHeight);
             if (scale != null) {
                 options.inScaled = true;
                 options.inDensity = scale[0];
@@ -291,6 +403,12 @@ final class WallpaperPlayer {
             Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), options);
             if (decoded == null) return null;
             if (dimColor != 0) new Canvas(decoded).drawColor(dimColor);
+            // Measured here, while the picture is still a software bitmap: a hardware one cannot be read back.
+            int w = decoded.getWidth(), h = decoded.getHeight();
+            decodedDockTone = GlassTone.regionLuminance(w, h, DOCK_AREA[0], DOCK_AREA[1], DOCK_AREA[2], DOCK_AREA[3], 24,
+                    decoded::getPixel);
+            decodedPillTone = GlassTone.regionLuminance(w, h, PILL_AREA[0], PILL_AREA[1], PILL_AREA[2], PILL_AREA[3], 12,
+                    decoded::getPixel);
             // One copy in GPU memory instead of a software bitmap plus its texture; the decode stays off the UI
             // thread for rotations, and Home's return no longer uploads 4-8 MB to the GPU.
             Bitmap gpu = decoded.copy(Bitmap.Config.HARDWARE, false);

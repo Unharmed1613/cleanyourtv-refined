@@ -98,6 +98,15 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     static final float FOCUS_SCALE = 1.10f;
+
+    /**
+     * How far a focused tile rises above the others, in dp: its elevation, which is what casts its shadow. glass_style
+     * shadow lifts it high for a wide soft shadow, as that shadow is the whole focus mark; advanced_effects alone keeps
+     * its small lift; otherwise the tile stays flat.
+     */
+    static float focusLiftDp(boolean shadowFocus, boolean advancedEffects) {
+        return shadowFocus ? 18f : advancedEffects ? 8f : 0f;
+    }
     /** Design size of a tile (dp); tiles shrink from here when the columns don't fit, see tileWidthPx. */
     static final float DESIGN_W_DP = 180f, DESIGN_H_DP = 101f;
 
@@ -188,6 +197,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean singleRow;
     /** config always_show_names: the alpha of an unfocused tile's name (0 hides it). */
     private final float restNameAlpha;
+    /** glass_style shadow: the focused tile rises and casts a soft shadow instead of the glass highlight behind it. */
+    private final boolean shadowFocus;
     /** cinematic_home: only then does a launch record the last-opened app the shelf uses. */
     private final boolean cinematic;
     /** Dock order (config.xml dock_apps, or a theme's config.json). */
@@ -242,6 +253,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.singleRow = cfg.singleRow;
         this.restNameAlpha = cfg.alwaysShowNames ? 0.75f : 0f;
         this.cinematic = cfg.cinematicHome;
+        this.shadowFocus = Config.GLASS_SHADOW.equals(cfg.glassStyle);
         this.launchActions = cfg.launchActions;
         this.iconTiles = new HashSet<>(Arrays.asList(ctx.getResources().getStringArray(R.array.icon_tiles)));
         this.tileMenu = cfg.tileMenu;
@@ -452,7 +464,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             View label = v.findViewById(R.id.label);
             label.setPadding(label.getPaddingLeft(), label.getPaddingTop(), label.getPaddingRight(), Math.round(4f * density));
         }
-        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot);
+        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot,
+                focusLiftDp(shadowFocus, advancedEffects) * density, shadowFocus);
     }
 
     @Override
@@ -485,7 +498,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         h.card.setScaleX(focused && animations ? focusScale() : 1f);
         h.card.setScaleY(focused && animations ? focusScale() : 1f);
         h.card.setTranslationY(focused && advancedEffects && !dockKind ? -4f * ctx.getResources().getDisplayMetrics().density : 0f);
-        h.card.setTranslationZ(focused && advancedEffects ? 8f * ctx.getResources().getDisplayMetrics().density : 0f);
+        h.card.setTranslationZ(focused ? h.lift : 0f);
+        if (h.sheen != null) h.sheen.focus(focused, false, false);
+        h.card.setRotationX(0f);
+        h.card.setRotationY(0f);
         h.banner.setScaleX(focused && advancedEffects ? 1.035f : 1f);
         h.banner.setScaleY(focused && advancedEffects ? 1.035f : 1f);
         // A fully opaque banner covers the whole card (centerCrop), so the card's own fill under it is drawn for
@@ -900,6 +916,14 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return 16f * density * Math.min(1f, tileWidthPx / (DESIGN_W_DP * density));
     }
 
+    /**
+     * glass_style shadow: the D-pad key that moved the focus, so the tile it lands on tilts in from that side (Holder).
+     * Main thread only; read once and cleared by the tile that takes the focus.
+     */
+    static int navKey;
+    /** How far that tile starts tilted, in degrees, before it settles flat as it grows. */
+    static final float TILT_DEG = 10f;
+
     static final class Holder extends RecyclerView.ViewHolder {
         final View card;
         /** item_app.xml's tile_bg: the dark card behind an icon tile, or behind a banner that has transparent parts. */
@@ -914,11 +938,15 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         /** Alpha of the name while the tile is not focused (always_show_names). */
         final float restNameAlpha;
         final boolean overshoot;
+        /** Elevation of the tile while focused, in px (focusLiftDp); 0 keeps it flat. */
+        final float lift;
+        /** glass_style shadow: the light on the focused tile (TileSheen); null for the other styles. */
+        final TileSheen sheen;
         /** A dock tile: it grows in place without advanced_effects' lift, which reads as off-centre in the band (#2135). */
         boolean inDock;
 
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
-               boolean reducedMotion, float restNameAlpha, boolean overshoot) {
+               boolean reducedMotion, float restNameAlpha, boolean overshoot, float lift, boolean shadowFocus) {
             super(v);
             card = v.findViewById(R.id.card);
             cardBackground = card.getBackground();
@@ -931,6 +959,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             this.reducedMotion = reducedMotion;
             this.restNameAlpha = restNameAlpha;
             this.overshoot = overshoot;
+            this.lift = lift;
+            sheen = shadowFocus ? new TileSheen() : null;
+            if (sheen != null) card.setForeground(sheen);
 
             final float density = v.getResources().getDisplayMetrics().density;
             card.setOutlineProvider(new ViewOutlineProvider() {
@@ -946,6 +977,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
                 if (keyCode != KeyEvent.KEYCODE_DPAD_UP && keyCode != KeyEvent.KEYCODE_DPAD_DOWN
                         && keyCode != KeyEvent.KEYCODE_DPAD_LEFT && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+                navKey = keyCode;
                 int pos = getBindingAdapterPosition();
                 return listener != null && pos != RecyclerView.NO_POSITION && listener.onTileVerticalKey(pos, keyCode);
             });
@@ -956,11 +988,22 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 name.animate().cancel();
                 float scale = !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
                 float s = focused ? scale : 1f;
+                boolean tilt = sheen != null && animations && !reducedMotion;
+                int key = navKey;
+                if (focused) navKey = 0;
+                if (sheen != null) sheen.focus(focused, tilt, focused && key == KeyEvent.KEYCODE_DPAD_LEFT);
+                if (tilt && focused) {
+                    // tvOS: the tile swings in from the side the remote moved from and settles flat as it grows.
+                    view.setCameraDistance(2600 * density);   // close enough that the turn reads as depth
+                    view.setRotationY(key == KeyEvent.KEYCODE_DPAD_RIGHT ? TILT_DEG : key == KeyEvent.KEYCODE_DPAD_LEFT ? -TILT_DEG : 0f);
+                    view.setRotationX(key == KeyEvent.KEYCODE_DPAD_DOWN ? TILT_DEG : key == KeyEvent.KEYCODE_DPAD_UP ? -TILT_DEG : 0f);
+                }
                 if (!animations) {
                     view.setScaleX(1f);
                     view.setScaleY(1f);
                     view.setTranslationY(0f);
-                    view.setTranslationZ(0f);
+                    // No zoom without animations: with glass_style shadow the shadow alone marks the focus then.
+                    view.setTranslationZ(focused ? lift : 0f);
                     banner.setScaleX(1f);
                     banner.setScaleY(1f);
                     name.setAlpha(focused ? 1f : restNameAlpha);
@@ -970,7 +1013,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     // frames than it saves. The name just appears instead of fading.
                     view.animate().scaleX(s).scaleY(s)
                             .translationY(focused && advancedEffects && !inDock ? -4f * density : 0f)
-                            .translationZ(focused && advancedEffects ? 8f * density : 0f)
+                            .translationZ(focused ? lift : 0f)
                             .setDuration(focused ? Motion.REDUCED_MS : 60)
                             .setInterpolator(new DecelerateInterpolator())
                             .start();
@@ -980,10 +1023,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     // Only on focus: snapping it back to -6dp while it fades out would jump it up over the tile.
                     if (focused) name.setTranslationY(density * 4f);
                 } else {
-                    view.animate().scaleX(s).scaleY(s)
+                    view.animate().scaleX(s).scaleY(s).rotationX(0f).rotationY(0f)
                             .translationY(focused && advancedEffects && !inDock ? -4f * density : 0f)
-                            .translationZ(focused && advancedEffects ? 8f * density : 0f)
-                            .setDuration(advancedEffects ? (focused ? 220 : 170) : (focused ? 260 : 180))
+                            .translationZ(focused ? lift : 0f)
+                            .setDuration(tilt && focused ? 420 : advancedEffects ? (focused ? 220 : 170) : (focused ? 260 : 180))
                             .setInterpolator(focused && !overshoot ? new DecelerateInterpolator(1.5f)
                                     : new OvershootInterpolator(focused ? (advancedEffects ? 0.7f : 1.6f) : 0f))
                             .withLayer().start();

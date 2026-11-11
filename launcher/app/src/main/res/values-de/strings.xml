@@ -39,6 +39,13 @@
     <string name="advanced_effects_warning">Hebt Kacheln an, vergrößert Symbole und glättet Farbübergänge. Kann den Speicherverbrauch erhöhen; die Wirkung hängt vom TV ab.</string>
     <string name="follow_theme">Design übernehmen (TV-Auswahl zurücksetzen)</string>
     <string name="follow_theme_hint">Verwendet Layout und Bewegung des aktuellen Designs oder der integrierten Einstellungen. Ein neues oder zurückgesetztes Design löscht die TV-Auswahl ebenfalls.</string>
+    <string name="control_center">Kontrollzentrum</string>
+    <string name="cc_volume">Lautstärke</string>
+    <string name="cc_screensaver">Bildschirmschoner</string>
+    <string name="cc_power">Ausschalten…</string>
+    <string name="cc_bluetooth">Bluetooth</string>
+    <string name="quick_picture">Bild</string>
+    <string name="quick_network">Netzwerk</string>
     <string name="tv_settings">TV-Systemeinstellungen</string>
     <string name="on">Ein</string>
     <string name="off">Aus</string>

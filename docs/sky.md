@@ -29,12 +29,14 @@ the default 60.
 
 ## Where the sun is
 
-With nothing set, the day the sky is drawn on is a fixed temperate one: sunrise 07:30, sunset 19:00,
-counted on the TV's own clock. The warm glow therefore peaks at seven in the evening wherever the TV
-is, and its position travels left to right through that day — which for most of Europe lands a couple of
-hours before the real sunset in summer, and after it in winter.
+With nothing set, the sky follows the real sun at the reference city of the TV's time zone: Berlin for
+Europe/Berlin, Chicago for America/Chicago. The list is the IANA tz database's `zone.tab` (public domain),
+shipped as `res/raw/zone_coords.txt` and read by `ZoneCoordinates.java`. Across one zone that is off by
+up to about half an hour at the edges, which the glow does not show. A zone that is not in the list
+(`Etc/UTC`, a bare offset) keeps a fixed temperate day: sunrise 07:30, sunset 19:00, counted on the TV's
+own clock.
 
-To pin the sky to the real sun, set `latitude` and `longitude` in decimal degrees (south and west
+To pin the sky to your own place instead, set `latitude` and `longitude` in decimal degrees (south and west
 negative) in `launcher/app/src/main/res/values/config.xml`, before building the launcher:
 
 ```xml
@@ -49,7 +51,7 @@ about half a minute, so a city's coordinates are plenty.
 
 Two days keep that fixed day instead: one with no sunrise or sunset at all (polar night, or the
 midnight sun), and one whose sunset the arithmetic puts past midnight, as in Reykjavik in June.
-Nothing is guessed from the time zone: it only decides which clock the minutes are counted on.
+Coordinates set in config.xml always win over the time zone's city.
 
 **A theme cannot set this.** `sky_intensity` comes from a theme's `config.json`, but the place is a
 launcher build setting — `SkyView` reads those two string resources and `Config` never looks for them

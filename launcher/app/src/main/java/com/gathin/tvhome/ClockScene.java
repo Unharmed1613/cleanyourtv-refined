@@ -10,11 +10,14 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
+import android.graphics.drawable.TransitionDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.View;
+import android.view.animation.LinearInterpolator;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import java.io.File;
 import java.time.LocalDateTime;
@@ -40,11 +43,26 @@ final class ClockScene {
     /** Deep, low-brightness glow colours; the glow is drawn at partial alpha on black. */
     private static final int[] PALETTE = {0xFF2B5CFF, 0xFF00A39A, 0xFF8A3FFC, 0xFFE0661B, 0xFFD6336C};
 
+    /** How long a collection's next picture takes to fade in over the last one. */
+    private static final int FADE_MS = 2500;
+    /** How far drift() zooms into a picture over its interval. */
+    private static final float DRIFT_SCALE = 1.08f;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Random random = new Random();
     private final View content;
     private final ClockRefresh clockRefresh;
     private final ImageView ambient;
+    /** The date under the time; clock_date false hides it. */
+    private final View date;
+    /** clock_corner: the clock rests at the bottom left with the picture's name under it (captions). */
+    private boolean corner;
+    private TextView caption;
+    private Map<String, String> captions = java.util.Collections.emptyMap();
+    /** clock_corner: minutes since the last small shift, and which of the shifts the clock is on. */
+    private int restMinutes, shift;
+    /** The slow zoom over a collection's pictures: in on one interval, back out on the next. */
+    private boolean zoomIn = true;
     private final GradientDrawable glow;
     private int colorIndex;
     private int glowColor;
@@ -79,6 +97,7 @@ final class ClockScene {
         content = root.findViewById(R.id.dreamContent);
         clockRefresh = new ClockRefresh(content);
         ambient = root.findViewById(R.id.dreamAmbient);
+        date = root.findViewById(R.id.dreamDate);
         glow = new GradientDrawable();
         glow.setGradientType(GradientDrawable.RADIAL_GRADIENT);
         ambient.setBackground(glow);
@@ -98,12 +117,14 @@ final class ClockScene {
         handler.postDelayed(tick, MOVE_MS);
         clockRefresh.start();
         if (wallpaperFile != null && !wallpaperShown) loadWallpaper();
+        else if (wallpaperShown) drift();   // stop() cancelled the zoom; carry on from where it stood
     }
 
     void stop() {
         handler.removeCallbacksAndMessages(null);   // the tick and any glow steps still queued
         clockRefresh.stop();
         content.animate().cancel();
+        ambient.animate().cancel();
         wallpaperGeneration++;   // a decode still running must not attach its picture to a stopped scene
     }
 
@@ -120,6 +141,17 @@ final class ClockScene {
             cfg = Config.load(ctx);
         } catch (RuntimeException e) {
             return;
+        }
+        if (!cfg.clockDate && date != null) date.setVisibility(View.GONE);
+        trueColor = cfg.wallpaperTrueColor;
+        corner = cfg.clockCorner && cfg.clockWallpaper && !cfg.wallpapers.isEmpty();
+        if (corner) {
+            // tvOS: a calm clock in the corner over the picture, not a big one wandering about.
+            TextView time = content.findViewById(R.id.dreamClock);
+            if (time != null) time.setTextSize(76f);
+            caption = content.findViewById(R.id.dreamCaption);
+            captions = WallpaperCaptions.read(cfg.wallpapers.get(0).getParentFile(),
+                    content.getResources().getConfiguration().getLocales().get(0));
         }
         if (!cfg.clockWallpaper) {
             // clock_glow false: plain black behind the clock (OLED); the clock itself still moves every minute.
@@ -140,14 +172,18 @@ final class ClockScene {
             String shown = ctx.getSharedPreferences("wallpaper_rotation", Context.MODE_PRIVATE)
                     .getString("image", "");
             File current = WallpaperRotation.find(rotation, shown);
+            order = cfg.wallpaperOrder;
+            // A collection only the screensaver plays (Home has "wallpaper": false) has no current picture: each
+            // start picks one the way the rotation would, so it does not open on the same picture every time.
+            if (current == null && !cfg.wallpaperEnabled) current = WallpaperRotation.pick(rotation, "", order, random);
             wallpaperFile = current != null ? current : rotation.get(0);
             // Home only rotates while it is visible, so the screensaver carries the rotation on
             // itself; without this it holds one picture for as long as it is up.
             rotationMs = cfg.wallpaperRotationMinutes * 60_000L;
-            order = cfg.wallpaperOrder;
             moods = cfg.wallpaperMoods;
-            latitude = moods.isEmpty() ? "" : ctx.getString(R.string.latitude);
-            longitude = moods.isEmpty() ? "" : ctx.getString(R.string.longitude);
+            String[] place = moods.isEmpty() ? new String[]{"", ""} : ZoneCoordinates.place(ctx, ZoneId.systemDefault());
+            latitude = place[0];
+            longitude = place[1];
         }
         wallpaperShade = (cfg.clockWallpaperDim * 255 / 100) << 24;
         wallpaperRes = ctx.getResources();
@@ -158,10 +194,12 @@ final class ClockScene {
         int shade = wallpaperShade;
         Resources res = wallpaperRes;
         DisplayMetrics dm = res.getDisplayMetrics();
-        int w = dm.widthPixels, h = dm.heightPixels;
+        // As large as the slow zoom's far end (drift), so the zoom never stretches the picture past its pixels.
+        int w = (int) Math.ceil(dm.widthPixels * DRIFT_SCALE), h = (int) Math.ceil(dm.heightPixels * DRIFT_SCALE);
+        Bitmap.Config depth = trueColor ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
         int generation = ++wallpaperGeneration;
         new Thread(() -> {
-            Bitmap bmp = decode(file, w, h);
+            Bitmap bmp = decode(file, w, h, depth);
             if (bmp == null) return;
             handler.post(() -> {
                 if (generation != wallpaperGeneration || wallpaperShown) {
@@ -172,14 +210,68 @@ final class ClockScene {
                 // As the image, not the background: a background is stretched to the view, so a picture of
                 // another shape than the screen would be distorted. centerCrop scales and crops it like Home.
                 ambient.setBackground(null);
-                ambient.setImageDrawable(new LayerDrawable(new Drawable[]{
-                        new BitmapDrawable(res, bmp), new ColorDrawable(shade)}));
+                Drawable next = new LayerDrawable(new Drawable[]{new BitmapDrawable(res, bmp), new ColorDrawable(shade)});
+                Drawable previous = ambient.getDrawable();
+                if (previous instanceof TransitionDrawable) previous = ((TransitionDrawable) previous).getDrawable(1);
+                if (previous == null) {
+                    ambient.setImageDrawable(next);
+                } else {
+                    // The next picture of a collection fades in over the last one instead of cutting to it.
+                    TransitionDrawable fade = new TransitionDrawable(new Drawable[]{previous, next});
+                    fade.setCrossFadeEnabled(true);
+                    ambient.setImageDrawable(fade);
+                    fade.startTransition(FADE_MS);
+                }
+                drift();
+                showCaption(file.getName());
             });
         }, "clock-wallpaper").start();
     }
 
+    /** clock_corner: the shown picture's name under the time, faded across a change; none without a caption line. */
+    private void showCaption(String fileName) {
+        if (!corner || caption == null) return;
+        String name = captions.get(fileName);
+        caption.animate().cancel();
+        if (name == null) {
+            caption.setVisibility(View.GONE);
+            content.post(this::placeClock);   // one line less: keep the clock on its bottom margin
+            return;
+        }
+        if (caption.getVisibility() != View.VISIBLE) {
+            caption.setText(name);
+            caption.setAlpha(0f);
+            caption.setVisibility(View.VISIBLE);
+            content.post(this::placeClock);
+            caption.animate().alpha(1f).setDuration(FADE_MS).start();
+            return;
+        }
+        caption.animate().alpha(0f).setDuration(FADE_MS / 2).withEndAction(() -> {
+            caption.setText(name);
+            content.post(this::placeClock);
+            caption.animate().alpha(1f).setDuration(FADE_MS / 2).start();
+        }).start();
+    }
+
+    /**
+     * A collection's pictures drift: a slow zoom over each interval, in on one and back out on the next, so the
+     * screensaver is never a still frame. The picture is drawn into a hardware layer once and the zoom only scales
+     * that texture.
+     */
+    private void drift() {
+        if (rotation == null || rotationMs <= 0) return;
+        ambient.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        float to = zoomIn ? DRIFT_SCALE : 1f;
+        zoomIn = !zoomIn;
+        ambient.animate().scaleX(to).scaleY(to).setDuration(rotationMs)
+                .setInterpolator(new LinearInterpolator()).start();
+    }
+
+    /** wallpaper_true_color: full colour depth, so skies and dusk gradients do not band. */
+    private boolean trueColor;
+
     /** WallpaperPlayer's decode: sampled and scaled down to cover the screen, never bigger than 4K. */
-    private static Bitmap decode(File file, int screenW, int screenH) {
+    private static Bitmap decode(File file, int screenW, int screenH, Bitmap.Config depth) {
         try {
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inJustDecodeBounds = true;
@@ -196,7 +288,7 @@ final class ClockScene {
                 options.inDensity = scale[0];
                 options.inTargetDensity = scale[1];
             }
-            options.inPreferredConfig = Bitmap.Config.RGB_565;
+            options.inPreferredConfig = depth;
             return BitmapFactory.decodeFile(file.getPath(), options);
         } catch (Exception | OutOfMemoryError failure) {
             return null;
@@ -228,6 +320,14 @@ final class ClockScene {
     }
 
     private void moveClock() {
+        if (corner) {
+            // A small shift every five minutes, without the fade: the clock stays put to the eye.
+            if (++restMinutes < 5) return;
+            restMinutes = 0;
+            shift++;
+            placeClock();
+            return;
+        }
         content.animate().alpha(0f).setDuration(900).withLayer().withEndAction(() -> {
             placeClock();
             content.animate().alpha(1f).setDuration(1200).withLayer().start();
@@ -237,6 +337,15 @@ final class ClockScene {
     /** A random spot that keeps the whole clock on screen, with the glow centred behind it. */
     private void placeClock() {
         View parent = (View) content.getParent();
+        if (corner) {
+            // Bottom left, nudged by up to 12 px between shifts so the same pixels are not lit for hours.
+            float dp = parent.getResources().getDisplayMetrics().density;
+            int[][] nudges = {{0, 0}, {6, -4}, {12, 0}, {6, 4}, {0, -6}, {10, -8}};
+            int[] n = nudges[shift % nudges.length];
+            content.setX(Math.round(56 * dp) + n[0]);
+            content.setY(Math.max(0, parent.getHeight() - content.getHeight() - Math.round(48 * dp)) + n[1]);
+            return;
+        }
         int maxX = Math.max(0, parent.getWidth() - content.getWidth());
         int maxY = Math.max(0, parent.getHeight() - content.getHeight());
         float x = maxX * (0.1f + 0.8f * random.nextFloat());

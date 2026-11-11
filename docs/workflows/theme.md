@@ -8,6 +8,8 @@
    and art you have the right to use. `tests/test_theme_wallpapers.py` holds every picture to those numbers
    (a smaller 16:9 picture is fine, the launcher scales it) and names one the launcher would never draw: a
    `wallpapers/` file that is not a JPEG, PNG or WebP, or a single picture not called `wallpaper.jpg`.
+   A theme with `wallpaper_drift` may ship pictures up to 2560x1440 and 2 MB each: the launcher decodes them larger by
+   the slow zoom's reach, so the zoom never stretches them.
    Pictures you did not draw need a `CREDITS.md` beside them, the format in `themes/sweden/CREDITS.md`:
    `tests/test_theme_picture_credits.py` holds each picture the folder ships to a line there.
 3. Push it to a real TV with `TV_HOST=<tv ip> tools/theme.sh themes/<name>` and take `screenshot.jpg` of

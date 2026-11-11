@@ -29,6 +29,8 @@ public class GlassView extends View {
     /** glass_style rim or halo: no sheen and no fill, only the crisp rim (and, for halo, a lighter outer glow). */
     private boolean flat;
     private boolean halo;
+    /** glass_style shadow: nothing is drawn here; the focused tile casts a soft shadow of its own (AppAdapter). */
+    private boolean shadow;
 
     public GlassView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -65,6 +67,7 @@ public class GlassView extends View {
     void setStyle(String style) {
         flat = Config.GLASS_RIM.equals(style) || Config.GLASS_HALO.equals(style);
         halo = Config.GLASS_HALO.equals(style);
+        shadow = Config.GLASS_SHADOW.equals(style);
         rim.setStrokeWidth((flat ? 2f : 1.5f) * density);
         invalidate();
     }
@@ -83,6 +86,7 @@ public class GlassView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        if (shadow) return;
         float inset = 6f * density;   // room for the glow
         rect.set(inset, inset, getWidth() - inset, getHeight() - inset);
 

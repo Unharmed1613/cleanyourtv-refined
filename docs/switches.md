@@ -70,3 +70,9 @@ rule sit on its wanted list until a screenshot arrives.
 | `clock_format` | <img src="switches/clock_format.jpg" width="320" alt="clock_format on a TV"> |
 | `glow_snap` | <img src="switches/glow_snap.jpg" width="320" alt="glow_snap on a TV: the glow in Netflix red behind the dock"> |
 | `settings_key_clear_task` | <img src="switches/settings_key_clear_task.jpg" width="320" alt="settings_key_clear_task on a TV: the TV Settings screen the gear opens"> |
+| `status_pill` | <img src="../themes/refined/screenshot.jpg" width="320" alt="status_pill on a TV: the time, Settings and Play Store in one glass capsule at the top right"> |
+| `control_center` | <img src="switches/control_center.jpg" width="320" alt="control_center on a TV: the glass panel under the gear with the volume, round buttons and rows"> |
+| `home_entrance` | <img src="../themes/refined/screenshot.jpg" width="320" alt="home_entrance on a TV: Home once the dock has slid into place"> |
+| `wallpaper_drift` | <img src="../themes/refined/screenshot.jpg" width="320" alt="wallpaper_drift on a TV: a 2560x1440 picture part way through its slow zoom"> |
+| `clock_corner` | <img src="switches/clock_corner.jpg" width="320" alt="clock_corner on a TV: the clock small at the bottom left with the picture's name under it"> |
+| `clock_date` | <img src="switches/clock_corner.jpg" width="320" alt="clock_date false on a TV: the clock screensaver's time with no date under it"> |

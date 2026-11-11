@@ -116,7 +116,7 @@ del() { echo "rm -f $DIR/$1 2>/dev/null; content delete --uri $URI/$1 2>/dev/nul
 # empty it too: the launcher's wallpaper picker (LauncherSettingsActivity.showWallpaperPicker) lists that folder
 # itself, and an on-TV pick of one of its pictures is read back from it (WallpaperRotation.chosen), so a reset
 # that left the pictures behind still shows the theme it just removed. Both paths use this one string.
-CLEAR_WALLPAPERS="rm -f $DIR/wallpapers/*.[jJ][pP][gG] $DIR/wallpapers/*.[jJ][pP][eE][gG] $DIR/wallpapers/*.[pP][nN][gG] $DIR/wallpapers/*.[wW][eE][bB][pP] 2>/dev/null; content delete --uri $URI/wallpapers 2>/dev/null"
+CLEAR_WALLPAPERS="rm -f $DIR/wallpapers/*.[jJ][pP][gG] $DIR/wallpapers/*.[jJ][pP][eE][gG] $DIR/wallpapers/*.[pP][nN][gG] $DIR/wallpapers/*.[wW][eE][bB][pP] $DIR/wallpapers/captions-*.txt 2>/dev/null; content delete --uri $URI/wallpapers 2>/dev/null"
 
 # Both paths end with the same restart, and both are past the point where the TV was written to. The helper's
 # own 2 ("the TV did not answer, so nothing was asked of it") describes the restart alone: on this side of the
@@ -226,6 +226,14 @@ done
 if [ -f "$THEME/wallpapers/captions.txt" ]; then
   "$PY" -I b64push.py "$THEME/wallpapers/captions.txt" "$(stage wallpapers/captions.txt)" || stopped wallpapers/captions.txt
   put_on wallpapers/captions.txt
+  # Its translations, captions-<language>.txt, read in the launcher's language (themes/README.md).
+  for T in "$THEME"/wallpapers/captions-*.txt; do
+    [ -f "$T" ] || continue
+    N="$(basename "$T")"
+    case "$N" in captions-[a-z][a-z].txt|captions-[a-z][a-z][a-z].txt) ;; *) echo "Skipping $N: not captions-<language>.txt" >&2; continue ;; esac
+    "$PY" -I b64push.py "$T" "$(stage "wallpapers/$N")" || stopped "wallpapers/$N"
+    put_on "wallpapers/$N"
+  done
 else
   tv "$(del wallpapers/captions.txt)" >/dev/null || stopped "removing wallpapers/captions.txt"
 fi

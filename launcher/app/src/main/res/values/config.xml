@@ -356,6 +356,30 @@
          0 leaves the Wi-Fi pill as an icon. -->
     <integer name="wifi_label_width">0</integer>
 
+    <!-- The top bar as one small glass capsule at the top right, like tvOS: the time, then Settings and the
+         top_bar_apps as round icons inside it. The greeting, clock, date and weather at the top left and the Inputs,
+         network and VPN pills are not shown, and no weather is fetched; the Inputs list hangs under the gear instead.
+         Without control_center, Settings opens TV Settings on its main page and holding OK on it still opens the
+         launcher menu. Off by default; a theme can set "status_pill": true. -->
+    <bool name="status_pill">false</bool>
+    <!-- With status_pill: the gear becomes the one settings button. A press (no hold, which some remotes never send)
+         opens the Control Centre, a glass panel under the pill: the volume (where the box sets it), round buttons for
+         the screensaver, Bluetooth, display, network and the power menu, then Inputs (only on a set that has some),
+         Reorder apps, Module cards (only when an app offers one), Launcher settings and TV Settings. Can also be set
+         with "control_center": true in a theme's config.json. -->
+    <bool name="control_center">false</bool>
+    <!-- The clock screensaver over pictures (clock_wallpaper): the clock rests smaller at the bottom left, with the
+         picture's name from wallpapers/captions.txt under it, and shifts a few pixels every five minutes instead of
+         jumping to a new spot every minute. Can also be set with "clock_corner": true in a theme. -->
+    <bool name="clock_corner">false</bool>
+    <!-- Home comes back on screen (power on, back from an app) with its wallpaper fading in and the dock and the top bar
+         sliding up into place, once, under a second. Can also be set with "home_entrance": true in a theme. -->
+    <bool name="home_entrance">false</bool>
+    <!-- Home's rotating wallpaper zooms slowly in over one picture's interval and back out over the next, while Home is
+         on screen. The picture is one texture, but the screen is redrawn the whole time, so it is off by default. Can
+         also be set with "wallpaper_drift": true in a theme. -->
+    <bool name="wallpaper_drift">false</bool>
+
     <!-- The Wi-Fi/Ethernet pill in the top bar. false hides it (on Android 14 with Location off it can
          only say "Wi-Fi", not the network name). Can also be set with "show_network_pill" in a theme. -->
     <bool name="show_network_pill">true</bool>
@@ -481,8 +505,9 @@
          sets its opacity. Around 60 reads clearly without hiding a wallpaper. Can also be set with
          "sky_intensity": 60 in a theme's config.json. -->
     <integer name="sky_intensity">0</integer>
-    <!-- Where the TV is, in decimal degrees, so the sky's sunrise and sunset glows follow the real sun
-         (computed on the TV, no network). Empty: a fixed temperate day, sunset glow around 19:00.
+    <!-- Where the TV is, in decimal degrees, so the sky's sunrise and sunset glows and wallpaper_moods follow the
+         real sun (computed on the TV, no network). Empty: the reference city of the TV's time zone (Berlin for
+         Europe/Berlin, from res/raw/zone_coords.txt); a fixed temperate day only when the zone is not in that list.
          Vilnius: 54.69 and 25.28. -->
     <string name="latitude" translatable="false"></string>
     <string name="longitude" translatable="false"></string>
@@ -540,13 +565,16 @@
          (OLED panels); they still move every minute. Ignored while clock_wallpaper shows a picture. Can also be set
          with "clock_glow" in a theme. -->
     <bool name="clock_glow">true</bool>
+    <!-- The date under the clock screensaver's time. false shows the time alone. Can also be set with "clock_date". -->
+    <bool name="clock_date">true</bool>
     <!-- Shape of the glow behind the focused app, in its colour: radial (a soft glow, the default) or horizon (the
          colour washes down from the top edge and fades to black, brightest along the top). The cinematic shelf
          keeps its own glow. Can also be set with "glow_style": "horizon" in a theme's config.json. -->
     <string name="glow_style" translatable="false">radial</string>
     <!-- The focus highlight's look: glass (the default: a translucent slab with a bright top sheen, a crisp rim and a
          faint outer glow), rim (the crisp rim alone, no sheen, fill or glow, for a quiet focus over a wallpaper) or
-         halo (the rim with a lighter outer glow). Can also be set with "glass_style": "rim" in a theme's config.json. -->
+         halo (the rim with a lighter outer glow). shadow draws no highlight at all: the focused tile grows and casts a
+         wide soft shadow, like tvOS, with no rim. Can also be set with "glass_style": "rim" in a theme's config.json. -->
     <string name="glass_style" translatable="false">glass</string>
 
     <!-- Tiles drawn from the app's icon and name instead of its banner (for banners that crop badly). -->

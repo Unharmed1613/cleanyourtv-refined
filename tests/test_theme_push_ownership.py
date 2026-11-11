@@ -440,7 +440,8 @@ class ThemePushTest(unittest.TestCase):
         clear = next(line for line in script.splitlines() if line.startswith("$clearWallpapers = "))
         self.assertIn("rm -f $dir/wallpapers/*.[jJ][pP][gG]", clear)
         self.assertIn("content delete --uri $uri/wallpapers", clear)
-        self.assertNotIn("captions", clear, "the captions file is dropped on its own line, as in theme.sh")
+        self.assertNotIn("captions.txt", clear, "the captions file is dropped on its own line, as in theme.sh")
+        self.assertIn("$dir/wallpapers/captions-*.txt", clear, "its translations go with the pictures, as in theme.sh")
 
 
 if __name__ == "__main__":

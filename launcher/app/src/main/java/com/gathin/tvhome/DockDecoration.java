@@ -18,6 +18,8 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     private final float density;
     private final Paint band = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** A black tint under the light glass over a bright wallpaper (setShade, GlassTone); 0 draws nothing. */
+    private final Paint shade = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
 
     /** Extra band below the tiles for their names (always_show_names), in px. */
@@ -58,7 +60,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         band.setColor(translucent ? 0x8C121014 : (Math.round(opacity * 2.55f) << 24) | 0x141416);
         edge.setStyle(Paint.Style.STROKE);
         edge.setStrokeWidth(density);
-        edge.setColor(lightGlass ? 0x38FFFFFF : translucent ? 0x26FFFFFF : 0x1FFFFFFF);
+        edge.setColor(lightGlass ? 0x1AFFFFFF : translucent ? 0x26FFFFFF : 0x1FFFFFFF);
     }
 
     /** Concentric corners: the band's radius is the tiles' radius plus the band's padding around them. */
@@ -146,7 +148,17 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             shaderTop = rect.top;
             shaderBottom = rect.bottom;
         }
+        if (lightGlass && shade.getAlpha() > 0) c.drawRoundRect(rect, radius, radius, shade);
         c.drawRoundRect(rect, radius, radius, band);
         c.drawRoundRect(rect, radius, radius, edge);
+    }
+
+    /** With dock_glass: darkens the band by a black tint of this alpha (0 to 255), so the glass shows over a bright picture. */
+    void setShade(int alpha) {
+        shade.setColor(Math.max(0, Math.min(255, alpha)) << 24);
+    }
+
+    int shade() {
+        return shade.getAlpha();
     }
 }

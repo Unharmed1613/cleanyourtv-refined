@@ -48,7 +48,10 @@ ROTATION_JAVA = ROOT / "launcher" / "app" / "src" / "main" / "java" / "com" / "g
 PICTURE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.(?:jpe?g|png|webp)", re.IGNORECASE)
 BULLET = re.compile(r"^[-*]\s+`?(" + PICTURE.pattern + r")`?\s*:", re.IGNORECASE)
 BACKTICKED = re.compile(r"`([^`]+)`")
-LICENCE = re.compile(r"CC0(?:\s*1\.0)?|CC[\s_-]*BY(?:[\s_-]*SA)?[\s_-]+\d\.\d|public domain", re.IGNORECASE)
+# This fork also takes the Unsplash License (https://unsplash.com/license): free to use and redistribute, with the
+# photographer credited here (themes/refined).
+LICENCE = re.compile(r"CC0(?:\s*1\.0)?|CC[\s_-]*BY(?:[\s_-]*SA)?[\s_-]+\d\.\d|public domain|Unsplash License",
+                     re.IGNORECASE)
 
 
 def shown_suffixes():
@@ -114,6 +117,8 @@ def licence(text):
         return "CC0"
     if said.startswith("public domain"):
         return "public domain"
+    if said.startswith("unsplash"):
+        return "Unsplash License"
     words = said.split()
     version = words[-1]
     return f"CC BY-SA {version}" if "sa" in words else f"CC BY {version}"
@@ -162,7 +167,7 @@ def problems(folder):
             out.append(f"themes/{folder.name}/CREDITS.md credits {name}, and there is no such picture")
     if licence(text) is None:
         out.append(f"themes/{folder.name}/CREDITS.md states no licence "
-                   f"(CC0, CC BY, CC BY-SA or public domain)")
+                   f"(CC0, CC BY, CC BY-SA, public domain or the Unsplash License)")
     for name, caption in captions(folder).items():
         on_the_tv, credited = licence(caption), licence(credit_line(text, name) or "")
         if on_the_tv and credited and on_the_tv != credited:
@@ -309,7 +314,7 @@ class TheProblemsFound(unittest.TestCase):
     def test_a_file_that_states_no_licence_is_reported(self):
         self.picture("001.jpg")
         self.credits('- 001.jpg: "Dusk" by Someone\n')
-        self.assertEqual(["themes/one/CREDITS.md states no licence (CC0, CC BY, CC BY-SA or public domain)"],
+        self.assertEqual(["themes/one/CREDITS.md states no licence (CC0, CC BY, CC BY-SA, public domain or the Unsplash License)"],
                          problems(self.folder))
 
     def test_a_caption_and_a_credit_that_state_different_licences_are_reported(self):

@@ -152,4 +152,9 @@
     <string name="clock_format_system">מערכת</string>
     <string name="clock_format_12">12 שעות</string>
     <string name="clock_format_24">24 שעות</string>
+    <string name="control_center">מרכז הבקרה</string>
+    <string name="cc_volume">עוצמת קול</string>
+    <string name="cc_screensaver">שומר מסך</string>
+    <string name="cc_power">כיבוי…</string>
+    <string name="cc_bluetooth">Bluetooth</string>
 </resources>

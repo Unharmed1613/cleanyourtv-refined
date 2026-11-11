@@ -21,6 +21,7 @@ that stops being read also stops being green.
 
 Run from the repository root: python3 -m unittest discover -s tests -v
 """
+import json
 import re
 import struct
 import tempfile
@@ -152,11 +153,25 @@ def picture_size(data):
     return None
 
 
-def picture_problems(data):
+# A theme with wallpaper_drift zooms each picture by up to 8 %, and the launcher decodes it that much larger so the
+# zoom never stretches it (docs/workflows/theme.md, step 2): such a theme may ship up to 2560x1440 and 2 MB a picture.
+DRIFT_WIDTH, DRIFT_BYTES = 2560, 2 * 1024 * 1024
+
+
+def theme_drifts(folder):
+    """True when this theme's config.json turns wallpaper_drift on."""
+    try:
+        return json.loads((Path(folder) / "config.json").read_text(encoding="utf-8")).get("wallpaper_drift") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def picture_problems(data, drift=False):
     """Every way this picture breaks the rules, one sentence each; empty when it is fine.
 
     The two the launcher enforces come first (it skips an empty file and one over its cap without a
-    word), then the picture's shape and weight as the recipe states them.
+    word), then the picture's shape and weight as the recipe states them. drift: the theme zooms its
+    pictures, which allows DRIFT_WIDTH and DRIFT_BYTES.
     """
     if not data:
         return ["is empty, and the launcher skips an empty picture"]
@@ -170,12 +185,13 @@ def picture_problems(data):
     problems = []
     if width * want_height != height * want_width:
         problems.append(f"is {width}x{height}, not {want_width}x{want_height}'s shape")
-    if width > want_width:
-        problems.append(f"is {width} px wide, and {want_width} is the most the recipe asks for")
-    limit = recipe_kilobytes() * 1024
+    if width > (DRIFT_WIDTH if drift else want_width):
+        problems.append(f"is {width} px wide, and {DRIFT_WIDTH if drift else want_width} is the most the recipe "
+                        f"asks for")
+    limit = DRIFT_BYTES if drift else recipe_kilobytes() * 1024
     if len(data) > limit:
         problems.append(f"is {len(data) // 1024} KB, and the recipe keeps a picture under "
-                        f"{recipe_kilobytes()} KB")
+                        f"{limit // 1024} KB")
     return problems
 
 
@@ -214,7 +230,8 @@ def problems(root):
     shown = shown_suffixes()
     keep = captions_name()
     for relative, path in pictures(root):
-        if path.name == keep:
+        # captions.txt, and its translations captions-<language>.txt (WallpaperCaptions.isCaptionsFile).
+        if path.name == keep or re.fullmatch(r"captions-[a-z]{2,3}\.txt", path.name):
             continue
         if "/wallpapers/" not in relative:
             # The launcher opens one name at a theme's root; anything else with a picture's prefix sits
@@ -226,7 +243,8 @@ def problems(root):
             out.append(f"{relative}: the launcher shows only {' '.join(shown)} in a collection, so this "
                        f"picture is never drawn")
             continue
-        for problem in picture_problems(path.read_bytes()):
+        for problem in picture_problems(path.read_bytes(), theme_drifts(path.parents[1] if "/wallpapers/" in relative
+                                                                         else path.parent)):
             out.append(f"{relative}: {problem}")
     return out
 

@@ -214,7 +214,7 @@ class ShippedConfigValuesTest(unittest.TestCase):
     def test_the_enum_values_are_read_out_of_the_launcher(self):
         # A constant parse that found nothing would let every value through, the way it did for "off".
         self.assertEqual(self.enums.get("glow_style"), ({"radial", "horizon"}, "trimmed"))
-        self.assertEqual(self.enums.get("glass_style"), ({"glass", "rim", "halo"}, "trimmed"))
+        self.assertEqual(self.enums.get("glass_style"), ({"glass", "rim", "halo", "shadow"}, "trimmed"))
         self.assertEqual(self.enums.get("wallpaper_order"), ({"sequential", "shuffle"}, "exact"))
 
     def test_a_value_outside_the_set_is_reported(self):
